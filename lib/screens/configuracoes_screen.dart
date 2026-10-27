@@ -1,117 +1,139 @@
 import 'package:flutter/material.dart';
 
 import '../models/contact.dart';
+import '../services/plataforma.dart';
 import '../store/agenda_store.dart';
+import '../widgets/dialogos.dart';
 
 /// Tela de Configurações: tema, backup automático e preferências.
 class ConfiguracoesScreen extends StatelessWidget {
   const ConfiguracoesScreen({super.key});
 
-  static const _coresTema = {
-    'Vermelho': Colors.red,
-    'Azul': Colors.blue,
-    'Verde': Colors.green,
-    'Roxo': Colors.deepPurple,
-    'Laranja': Colors.orange,
-  };
+  /// Cores que podem ser usadas no tema do app.
+  static const coresTema = [
+    Colors.red,
+    Colors.blue,
+    Colors.green,
+    Colors.deepPurple,
+    Colors.orange,
+  ];
 
-  Future<void> _restaurar(BuildContext context) async {
-    final store = AgendaStore.instance;
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Restaurar backup'),
-        content: Text(
-          'Os contatos atuais serão substituídos pelos do backup de '
-          '${formatDateTime(store.ultimoBackupEm!)}. Continuar?',
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Restaurar')),
-        ],
-      ),
+  Future<void> restaurar(BuildContext context) async {
+    final ok = await confirmar(
+      context,
+      'Restaurar backup',
+      'Os contatos atuais serão trocados pelos do backup de '
+          '${formatarDataHora(agenda.ultimoBackupEm!)}. Continuar?',
+      'Restaurar',
     );
-    if (ok == true && context.mounted) {
-      final n = store.restaurarBackup();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$n contato(s) restaurado(s).')),
-      );
-    }
+    if (!ok || !context.mounted) return;
+
+    final quantidade = agenda.restaurarBackup();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('$quantidade contato(s) restaurado(s).')),
+    );
   }
 
-  Widget _titulo(BuildContext context, String t) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-        child: Text(
-          t,
-          style: TextStyle(
-            color: Theme.of(context).colorScheme.primary,
-            fontWeight: FontWeight.bold,
+  Future<void> apagarTudo(BuildContext context) async {
+    final ok = await confirmar(
+      context,
+      'Apagar todos os dados',
+      'Todos os contatos, grupos e o backup serão apagados. Essa ação não pode ser desfeita.',
+      'Apagar',
+    );
+    if (ok) agenda.apagarTudo();
+  }
+
+  /// Título de cada seção da tela.
+  Widget titulo(String texto) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+      child: Text(texto, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+    );
+  }
+
+  /// Bolinhas para escolher a cor do tema.
+  Widget escolhaDeCor() {
+    return Wrap(
+      spacing: 8,
+      children: [
+        for (final cor in coresTema)
+          GestureDetector(
+            onTap: () {
+              agenda.setCorTema(cor);
+            },
+            child: Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: CircleAvatar(
+                radius: 14,
+                backgroundColor: cor,
+                child: agenda.corTema.toARGB32() == cor.toARGB32()
+                    ? const Icon(Icons.check, size: 16, color: Colors.white)
+                    : null,
+              ),
+            ),
           ),
-        ),
-      );
+      ],
+    );
+  }
+
+  /// Texto no fim da tela explicando onde os dados ficam salvos.
+  String textoSobreOsDados() {
+    if (!suportaArquivos) {
+      return 'Os dados ficam em memória enquanto o app estiver aberto.';
+    }
+    if (!agenda.salvoNoNavegador) {
+      return 'Não foi possível salvar no navegador (espaço cheio). '
+          'Remova fotos grandes ou exporte um backup em CSV.';
+    }
+    return 'Os dados são salvos automaticamente neste navegador. '
+        'Use Importar / Exportar para guardar uma cópia em arquivo CSV.';
+  }
 
   @override
   Widget build(BuildContext context) {
-    final store = AgendaStore.instance;
     return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
+      listenable: agenda,
+      builder: (context, child) {
+        String textoUltimoBackup = 'Nenhum backup feito';
+        if (agenda.ultimoBackupEm != null) {
+          textoUltimoBackup = formatarDataHora(agenda.ultimoBackupEm!);
+        }
+
         return Scaffold(
           appBar: AppBar(title: const Text('Configurações'), centerTitle: true),
           body: ListView(
             children: [
-              _titulo(context, 'Aparência'),
+              titulo('Aparência'),
               SwitchListTile(
-                secondary: Icon(store.darkMode ? Icons.dark_mode : Icons.light_mode),
+                secondary: Icon(agenda.darkMode ? Icons.dark_mode : Icons.light_mode),
                 title: const Text('Tema escuro'),
-                subtitle: Text(store.darkMode ? 'Escuro' : 'Claro'),
-                value: store.darkMode,
-                onChanged: store.setDarkMode,
+                subtitle: Text(agenda.darkMode ? 'Escuro' : 'Claro'),
+                value: agenda.darkMode,
+                onChanged: agenda.setDarkMode,
               ),
               ListTile(
                 leading: const Icon(Icons.palette),
                 title: const Text('Cor do tema'),
-                subtitle: Wrap(
-                  spacing: 8,
-                  children: [
-                    for (final e in _coresTema.entries)
-                      Tooltip(
-                        message: e.key,
-                        child: InkWell(
-                          customBorder: const CircleBorder(),
-                          onTap: () => store.setCorTema(e.value),
-                          child: Padding(
-                            padding: const EdgeInsets.only(top: 8),
-                            child: CircleAvatar(
-                              radius: 14,
-                              backgroundColor: e.value,
-                              child: store.corTema == e.value
-                                  ? const Icon(Icons.check, size: 16, color: Colors.white)
-                                  : null,
-                            ),
-                          ),
-                        ),
-                      ),
-                  ],
-                ),
+                subtitle: escolhaDeCor(),
               ),
-              _titulo(context, 'Backup'),
+
+              titulo('Backup'),
               SwitchListTile(
                 secondary: const Icon(Icons.backup),
                 title: const Text('Backup automático'),
-                subtitle: Text(store.backupAuto
-                    ? 'A cada ${store.intervaloBackupMin} min'
-                    : 'Desativado'),
-                value: store.backupAuto,
-                onChanged: store.setBackupAuto,
+                subtitle: Text(agenda.backupAuto ? 'A cada ${agenda.intervaloBackupMin} min' : 'Desativado'),
+                value: agenda.backupAuto,
+                onChanged: agenda.setBackupAuto,
               ),
               ListTile(
-                enabled: store.backupAuto,
                 leading: const Icon(Icons.timer),
                 title: const Text('Intervalo'),
                 trailing: DropdownButton<int>(
-                  value: store.intervaloBackupMin,
-                  onChanged: store.backupAuto ? (v) => store.setIntervaloBackup(v!) : null,
+                  value: agenda.intervaloBackupMin,
+                  onChanged: (minutos) {
+                    if (minutos != null) agenda.setIntervaloBackup(minutos);
+                  },
                   items: const [
                     DropdownMenuItem(value: 1, child: Text('1 min')),
                     DropdownMenuItem(value: 5, child: Text('5 min')),
@@ -123,18 +145,17 @@ class ConfiguracoesScreen extends StatelessWidget {
               ListTile(
                 leading: const Icon(Icons.history),
                 title: const Text('Último backup'),
-                subtitle: Text(store.ultimoBackupEm == null
-                    ? 'Nenhum backup feito'
-                    : formatDateTime(store.ultimoBackupEm!)),
+                subtitle: Text(textoUltimoBackup),
               ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
                 child: Wrap(
                   spacing: 8,
+                  runSpacing: 8,
                   children: [
                     OutlinedButton.icon(
                       onPressed: () {
-                        store.fazerBackup();
+                        agenda.fazerBackup();
                         ScaffoldMessenger.of(context).showSnackBar(
                           const SnackBar(content: Text('Backup feito.')),
                         );
@@ -143,47 +164,53 @@ class ConfiguracoesScreen extends StatelessWidget {
                       label: const Text('Fazer backup agora'),
                     ),
                     OutlinedButton.icon(
-                      onPressed: store.ultimoBackupCsv == null ? null : () => _restaurar(context),
+                      onPressed: agenda.ultimoBackup == null ? null : () => restaurar(context),
                       icon: const Icon(Icons.restore),
                       label: const Text('Restaurar último backup'),
                     ),
                   ],
                 ),
               ),
-              _titulo(context, 'Preferências'),
+
+              titulo('Preferências'),
               SwitchListTile(
                 secondary: const Icon(Icons.sort_by_alpha),
                 title: const Text('Ordem alfabética crescente'),
-                subtitle: Text(store.ordemCrescente ? 'A → Z' : 'Z → A'),
-                value: store.ordemCrescente,
-                onChanged: store.setOrdemCrescente,
+                subtitle: Text(agenda.ordemCrescente ? 'A → Z' : 'Z → A'),
+                value: agenda.ordemCrescente,
+                onChanged: agenda.setOrdemCrescente,
               ),
               SwitchListTile(
                 secondary: const Icon(Icons.phone),
                 title: const Text('Mostrar telefone na lista'),
-                value: store.mostrarTelefoneNaLista,
-                onChanged: store.setMostrarTelefone,
+                value: agenda.mostrarTelefoneNaLista,
+                onChanged: agenda.setMostrarTelefone,
               ),
               ListTile(
                 leading: const Icon(Icons.notifications),
                 title: const Text('Antecedência dos lembretes de aniversário'),
                 trailing: DropdownButton<int>(
-                  value: store.diasLembrete,
-                  onChanged: (v) => store.setDiasLembrete(v!),
-                  items: [
-                    for (final d in [3, 7, 15, 30])
-                      DropdownMenuItem(value: d, child: Text('$d dias')),
+                  value: agenda.diasLembrete,
+                  onChanged: (dias) {
+                    if (dias != null) agenda.setDiasLembrete(dias);
+                  },
+                  items: const [
+                    DropdownMenuItem(value: 3, child: Text('3 dias')),
+                    DropdownMenuItem(value: 7, child: Text('7 dias')),
+                    DropdownMenuItem(value: 15, child: Text('15 dias')),
+                    DropdownMenuItem(value: 30, child: Text('30 dias')),
                   ],
                 ),
               ),
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  'Os dados ficam em memória enquanto o app estiver aberto (o exercício '
-                  'usa apenas widgets, sem pacotes de banco de dados). Use Exportar para '
-                  'guardar uma cópia em CSV.',
-                  style: TextStyle(fontSize: 12),
-                ),
+              ListTile(
+                leading: const Icon(Icons.delete_forever, color: Colors.red),
+                title: const Text('Apagar todos os dados'),
+                subtitle: const Text('Remove contatos, grupos e backup'),
+                onTap: () => apagarTudo(context),
+              ),
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: Text(textoSobreOsDados(), style: const TextStyle(fontSize: 12)),
               ),
             ],
           ),

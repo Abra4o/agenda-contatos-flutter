@@ -13,139 +13,176 @@ class PesquisaAvancadaScreen extends StatefulWidget {
 }
 
 class _PesquisaAvancadaScreenState extends State<PesquisaAvancadaScreen> {
-  final Set<String> _categorias = {};
-  String? _cidade;
-  String? _empresa;
-  DateTimeRange? _periodo;
+  // Filtros escolhidos. Vazio ou null = sem filtro.
+  List<String> categoriasEscolhidas = [];
+  String? cidade;
+  String? empresa;
+  DateTime? cadastroDe;
+  DateTime? cadastroAte;
 
-  bool get _temFiltro =>
-      _categorias.isNotEmpty || _cidade != null || _empresa != null || _periodo != null;
-
-  List<Contact> _filtrar(List<Contact> todos) {
-    return todos.where((c) {
-      if (_categorias.isNotEmpty && !c.categorias.any(_categorias.contains)) return false;
-      if (_cidade != null && c.cidade != _cidade) return false;
-      if (_empresa != null && c.empresa != _empresa) return false;
-      if (_periodo != null) {
-        final d = DateUtils.dateOnly(c.dataCadastro);
-        if (d.isBefore(_periodo!.start) || d.isAfter(_periodo!.end)) return false;
+  /// Retorna true se o contato passa em todos os filtros.
+  bool passaNosFiltros(Contact c) {
+    if (categoriasEscolhidas.isNotEmpty) {
+      bool temCategoria = false;
+      for (final cat in c.categorias) {
+        if (categoriasEscolhidas.contains(cat)) temCategoria = true;
       }
-      return true;
-    }).toList();
+      if (!temCategoria) return false;
+    }
+
+    if (cidade != null && c.cidade != cidade) return false;
+    if (empresa != null && c.empresa != empresa) return false;
+
+    if (cadastroDe != null && cadastroAte != null) {
+      // Compara só a data, sem a hora.
+      final data = DateTime(c.dataCadastro.year, c.dataCadastro.month, c.dataCadastro.day);
+      if (data.isBefore(cadastroDe!) || data.isAfter(cadastroAte!)) return false;
+    }
+    return true;
   }
 
-  Future<void> _escolherPeriodo() async {
-    final r = await showDateRangePicker(
+  Future<void> escolherPeriodo() async {
+    final periodo = await showDateRangePicker(
       context: context,
       firstDate: DateTime(2000),
       lastDate: DateTime.now(),
-      initialDateRange: _periodo,
       helpText: 'Data de cadastro',
     );
-    if (r != null) setState(() => _periodo = r);
+    if (periodo != null) {
+      setState(() {
+        cadastroDe = periodo.start;
+        cadastroAte = periodo.end;
+      });
+    }
   }
 
-  void _limpar() => setState(() {
-        _categorias.clear();
-        _cidade = null;
-        _empresa = null;
-        _periodo = null;
-      });
+  void limparFiltros() {
+    setState(() {
+      categoriasEscolhidas = [];
+      cidade = null;
+      empresa = null;
+      cadastroDe = null;
+      cadastroAte = null;
+    });
+  }
 
-  Widget _dropdown(String label, IconData icon, List<String> opcoes, String? valor,
-      ValueChanged<String?> onChanged) {
-    return DropdownButtonFormField<String?>(
-      key: ValueKey('$label-$valor'),
-      initialValue: valor,
-      isExpanded: true,
-      decoration: InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon),
-        border: const OutlineInputBorder(),
-        isDense: true,
-      ),
-      items: [
-        const DropdownMenuItem(value: null, child: Text('Todas')),
-        for (final o in opcoes) DropdownMenuItem(value: o, child: Text(o)),
+  /// Lista sem repetição e em ordem. Ex.: cidades de todos os contatos.
+  List<String> semRepetir(List<String> valores) {
+    final lista = <String>[];
+    for (final v in valores) {
+      if (v.isNotEmpty && !lista.contains(v)) lista.add(v);
+    }
+    lista.sort();
+    return lista;
+  }
+
+  /// Caixa de seleção com a opção "Todas" (null) no começo.
+  Widget caixaDeSelecao(String rotulo, List<String> opcoes, String? valor, ValueChanged<String?> aoMudar) {
+    final itens = <DropdownMenuItem<String>>[];
+    itens.add(const DropdownMenuItem(value: null, child: Text('Todas')));
+    for (final opcao in opcoes) {
+      itens.add(DropdownMenuItem(value: opcao, child: Text(opcao)));
+    }
+
+    return Row(
+      children: [
+        SizedBox(width: 80, child: Text(rotulo)),
+        Expanded(
+          child: DropdownButton<String>(
+            value: valor,
+            isExpanded: true,
+            items: itens,
+            onChanged: aoMudar,
+          ),
+        ),
       ],
-      onChanged: onChanged,
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final store = AgendaStore.instance;
     return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        final todos = store.contatos;
-        final cidades = todos.map((c) => c.cidade).where((s) => s.isNotEmpty).toSet().toList()..sort();
-        final empresas = todos.map((c) => c.empresa).where((s) => s.isNotEmpty).toSet().toList()..sort();
-        final resultado = _filtrar(todos);
+      listenable: agenda,
+      builder: (context, child) {
+        final todos = agenda.contatos;
+
+        final listaCidades = <String>[];
+        final listaEmpresas = <String>[];
+        for (final c in todos) {
+          listaCidades.add(c.cidade);
+          listaEmpresas.add(c.empresa);
+        }
+        final cidades = semRepetir(listaCidades);
+        final empresas = semRepetir(listaEmpresas);
+
+        // Se a cidade/empresa escolhida não existe mais (contato editado), limpa o filtro.
+        if (!cidades.contains(cidade)) cidade = null;
+        if (!empresas.contains(empresa)) empresa = null;
+
+        final resultado = <Contact>[];
+        for (final c in todos) {
+          if (passaNosFiltros(c)) resultado.add(c);
+        }
+
+        String textoPeriodo = 'Data de cadastro: qualquer';
+        if (cadastroDe != null && cadastroAte != null) {
+          textoPeriodo = 'Cadastro: ${formatarData(cadastroDe!)} a ${formatarData(cadastroAte!)}';
+        }
 
         return Scaffold(
           appBar: AppBar(
             title: const Text('Pesquisa Avançada'),
             centerTitle: true,
             actions: [
-              if (_temFiltro)
-                TextButton(
-                  onPressed: _limpar,
-                  style: TextButton.styleFrom(foregroundColor: Theme.of(context).colorScheme.onPrimary),
-                  child: const Text('Limpar'),
-                ),
+              IconButton(
+                tooltip: 'Limpar filtros',
+                icon: const Icon(Icons.filter_alt_off),
+                onPressed: limparFiltros,
+              ),
             ],
           ),
           body: ListView(
+            padding: const EdgeInsets.all(12),
             children: [
-              Padding(
-                padding: const EdgeInsets.all(12),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    const Text('Categorias'),
-                    const SizedBox(height: 6),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: [
-                        for (final cat in store.categorias)
-                          FilterChip(
-                            label: Text(cat),
-                            selected: _categorias.contains(cat),
-                            onSelected: (s) =>
-                                setState(() => s ? _categorias.add(cat) : _categorias.remove(cat)),
-                          ),
-                      ],
+              const Text('Categorias'),
+              Wrap(
+                spacing: 8,
+                children: [
+                  for (final cat in agenda.categorias)
+                    FilterChip(
+                      label: Text(cat),
+                      selected: categoriasEscolhidas.contains(cat),
+                      onSelected: (marcou) {
+                        setState(() {
+                          if (marcou) {
+                            categoriasEscolhidas.add(cat);
+                          } else {
+                            categoriasEscolhidas.remove(cat);
+                          }
+                        });
+                      },
                     ),
-                    const SizedBox(height: 16),
-                    _dropdown('Cidade', Icons.location_city, cidades, _cidade,
-                        (v) => setState(() => _cidade = v)),
-                    const SizedBox(height: 12),
-                    _dropdown('Empresa', Icons.business, empresas, _empresa,
-                        (v) => setState(() => _empresa = v)),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: _escolherPeriodo,
-                      icon: const Icon(Icons.date_range),
-                      label: Text(_periodo == null
-                          ? 'Data de cadastro: qualquer'
-                          : 'Cadastro: ${formatDate(_periodo!.start)} a ${formatDate(_periodo!.end)}'),
-                    ),
-                    if (_periodo != null)
-                      TextButton(
-                        onPressed: () => setState(() => _periodo = null),
-                        child: const Text('Remover filtro de data'),
-                      ),
-                  ],
-                ),
+                ],
               ),
-              const Divider(),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                child: Text('${resultado.length} resultado(s)',
-                    style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 12),
+              caixaDeSelecao('Cidade', cidades, cidade, (valor) {
+                setState(() {
+                  cidade = valor;
+                });
+              }),
+              caixaDeSelecao('Empresa', empresas, empresa, (valor) {
+                setState(() {
+                  empresa = valor;
+                });
+              }),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(
+                onPressed: escolherPeriodo,
+                icon: const Icon(Icons.date_range),
+                label: Text(textoPeriodo),
               ),
+              const Divider(height: 32),
+              Text('${resultado.length} resultado(s)', style: const TextStyle(fontWeight: FontWeight.bold)),
               if (resultado.isEmpty)
                 const SizedBox(
                   height: 200,

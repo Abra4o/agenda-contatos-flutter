@@ -5,46 +5,56 @@ import '../screens/detalhes_screen.dart';
 import '../store/agenda_store.dart';
 import 'contact_avatar.dart';
 
-/// Item de lista de contato; abre os Detalhes ao tocar.
+/// Item de lista de contato. Ao tocar, abre a tela de Detalhes.
 class ContactTile extends StatelessWidget {
   final Contact contato;
-  final Widget? trailing;
 
-  const ContactTile({super.key, required this.contato, this.trailing});
+  /// Botão da direita. Se não for informado, mostra a estrela de favorito.
+  final Widget? botao;
+
+  const ContactTile({super.key, required this.contato, this.botao});
 
   @override
   Widget build(BuildContext context) {
-    final store = AgendaStore.instance;
-    final sub = [
-      contato.email,
-      if (store.mostrarTelefoneNaLista) contato.telefone,
-    ].where((s) => s.isNotEmpty).join('  •  ');
+    // Texto de baixo: e-mail e telefone.
+    String subtitulo = contato.email;
+    if (agenda.mostrarTelefoneNaLista && contato.telefone.isNotEmpty) {
+      if (subtitulo.isNotEmpty) subtitulo += '  •  ';
+      subtitulo += contato.telefone;
+    }
+
+    Widget botaoDireita;
+    if (botao != null) {
+      botaoDireita = botao!;
+    } else {
+      botaoDireita = IconButton(
+        tooltip: contato.favorito ? 'Remover dos favoritos' : 'Favoritar',
+        icon: Icon(
+          contato.favorito ? Icons.star : Icons.star_border,
+          color: contato.favorito ? Colors.amber : null,
+        ),
+        onPressed: () {
+          agenda.setFavorito(contato, !contato.favorito);
+        },
+      );
+    }
 
     return ListTile(
-      leading: Hero(
-        tag: 'avatar-${contato.id}',
-        child: ContactAvatar(contact: contato),
-      ),
+      leading: ContactAvatar(contact: contato),
       title: Text(contato.nome),
-      subtitle: sub.isEmpty ? null : Text(sub),
-      trailing: trailing ??
-          IconButton(
-            tooltip: contato.favorito ? 'Remover dos favoritos' : 'Favoritar',
-            icon: Icon(
-              contato.favorito ? Icons.star : Icons.star_border,
-              color: contato.favorito ? Colors.amber : null,
-            ),
-            onPressed: () => store.setFavorito(contato.id, !contato.favorito),
-          ),
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => DetalhesScreen(contatoId: contato.id)),
-      ),
+      subtitle: subtitulo.isEmpty ? null : Text(subtitulo),
+      trailing: botaoDireita,
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (context) => DetalhesScreen(contato: contato)),
+        );
+      },
     );
   }
 }
 
-/// Mensagem para listas vazias.
+/// Mensagem mostrada quando uma lista está vazia.
 class EmptyState extends StatelessWidget {
   final IconData icon;
   final String texto;
@@ -59,7 +69,7 @@ class EmptyState extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(icon, size: 64, color: Theme.of(context).disabledColor),
+            Icon(icon, size: 64, color: Colors.grey),
             const SizedBox(height: 12),
             Text(texto, textAlign: TextAlign.center),
           ],

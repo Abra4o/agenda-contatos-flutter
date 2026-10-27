@@ -15,30 +15,81 @@ class ListagemScreen extends StatefulWidget {
 }
 
 class _ListagemScreenState extends State<ListagemScreen> {
-  final _busca = TextEditingController();
-  bool _bannerFechado = false;
+  final buscaController = TextEditingController();
+  bool avisoFechado = false;
 
   @override
   void dispose() {
-    _busca.dispose();
+    buscaController.dispose();
     super.dispose();
   }
 
-  String _quando(DateTime aniversario) {
-    final d = AgendaStore.diasAteAniversario(aniversario);
-    if (d == 0) return 'hoje';
-    if (d == 1) return 'amanhã';
-    return 'em $d dias';
+  /// Aviso no topo quando tem aniversário chegando.
+  Widget avisoDeAniversario() {
+    final lembretes = agenda.lembretes;
+    if (lembretes.isEmpty || avisoFechado) return const SizedBox();
+
+    String texto;
+    if (lembretes.length == 1) {
+      final dias = AgendaStore.diasAteAniversario(lembretes[0].aniversario!);
+      String quando = 'em $dias dias';
+      if (dias == 0) quando = 'hoje';
+      if (dias == 1) quando = 'amanhã';
+      texto = '${lembretes[0].nome} faz aniversário $quando!';
+    } else {
+      texto = '${lembretes.length} aniversários nos próximos ${agenda.diasLembrete} dias.';
+    }
+
+    return MaterialBanner(
+      leading: const Icon(Icons.cake),
+      content: Text(texto),
+      actions: [
+        TextButton(
+          onPressed: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => const AniversariosScreen()),
+            );
+          },
+          child: const Text('VER'),
+        ),
+        TextButton(
+          onPressed: () {
+            setState(() {
+              avisoFechado = true;
+            });
+          },
+          child: const Text('FECHAR'),
+        ),
+      ],
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final store = AgendaStore.instance;
     return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        final lista = store.buscar(_busca.text);
-        final lembretes = store.lembretes;
+      listenable: agenda,
+      builder: (context, child) {
+        final lista = agenda.buscar(buscaController.text);
+
+        Widget conteudo;
+        if (lista.isEmpty && buscaController.text.isEmpty) {
+          conteudo = const EmptyState(
+            icon: Icons.person_search,
+            texto: 'Nenhum contato cadastrado.\nToque em + para adicionar.',
+          );
+        } else if (lista.isEmpty) {
+          conteudo = const EmptyState(icon: Icons.person_search, texto: 'Nenhum contato encontrado.');
+        } else {
+          conteudo = ListView.builder(
+            padding: const EdgeInsets.only(bottom: 88),
+            itemCount: lista.length,
+            itemBuilder: (context, index) {
+              return ContactTile(contato: lista[index]);
+            },
+          );
+        }
+
         return Scaffold(
           appBar: AppBar(
             title: const Text('Agenda de Contatos'),
@@ -47,44 +98,19 @@ class _ListagemScreenState extends State<ListagemScreen> {
           drawer: const AppDrawer(),
           body: Column(
             children: [
-              if (lembretes.isNotEmpty && !_bannerFechado)
-                MaterialBanner(
-                  leading: const Icon(Icons.cake),
-                  content: Text(
-                    lembretes.length == 1
-                        ? '${lembretes.first.nome} faz aniversário ${_quando(lembretes.first.aniversario!)}!'
-                        : '${lembretes.length} aniversários nos próximos ${store.diasLembrete} dias.',
-                  ),
-                  actions: [
-                    TextButton(
-                      onPressed: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const AniversariosScreen()),
-                      ),
-                      child: const Text('VER'),
-                    ),
-                    TextButton(
-                      onPressed: () => setState(() => _bannerFechado = true),
-                      child: const Text('FECHAR'),
-                    ),
-                  ],
-                ),
+              avisoDeAniversario(),
               Padding(
                 padding: const EdgeInsets.all(8),
                 child: TextField(
-                  controller: _busca,
-                  onChanged: (_) => setState(() {}),
-                  decoration: InputDecoration(
-                    prefixIcon: const Icon(Icons.search),
+                  controller: buscaController,
+                  onChanged: (texto) {
+                    setState(() {});
+                  },
+                  decoration: const InputDecoration(
+                    prefixIcon: Icon(Icons.search),
                     hintText: 'Buscar por nome, e-mail ou telefone',
-                    border: const OutlineInputBorder(),
+                    border: OutlineInputBorder(),
                     isDense: true,
-                    suffixIcon: _busca.text.isEmpty
-                        ? null
-                        : IconButton(
-                            icon: const Icon(Icons.clear),
-                            onPressed: () => setState(_busca.clear),
-                          ),
                   ),
                 ),
               ),
@@ -95,36 +121,26 @@ class _ListagemScreenState extends State<ListagemScreen> {
                     Text('${lista.length} contato(s)'),
                     const Spacer(),
                     TextButton.icon(
-                      onPressed: () => store.setOrdemCrescente(!store.ordemCrescente),
+                      onPressed: () {
+                        agenda.setOrdemCrescente(!agenda.ordemCrescente);
+                      },
                       icon: const Icon(Icons.sort_by_alpha),
-                      label: Text(store.ordemCrescente ? 'A-Z' : 'Z-A'),
+                      label: Text(agenda.ordemCrescente ? 'A-Z' : 'Z-A'),
                     ),
                   ],
                 ),
               ),
-              Expanded(
-                child: lista.isEmpty
-                    ? EmptyState(
-                        icon: Icons.person_search,
-                        texto: _busca.text.isEmpty
-                            ? 'Nenhum contato cadastrado.\nToque em + para adicionar.'
-                            : 'Nenhum contato encontrado.',
-                      )
-                    : ListView.separated(
-                        padding: const EdgeInsets.only(bottom: 88),
-                        itemCount: lista.length,
-                        separatorBuilder: (_, _) => const Divider(height: 1),
-                        itemBuilder: (_, i) => ContactTile(contato: lista[i]),
-                      ),
-              ),
+              Expanded(child: conteudo),
             ],
           ),
           floatingActionButton: FloatingActionButton(
             tooltip: 'Novo contato',
-            onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (_) => const CadastroScreen()),
-            ),
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const CadastroScreen()),
+              );
+            },
             child: const Icon(Icons.add),
           ),
         );

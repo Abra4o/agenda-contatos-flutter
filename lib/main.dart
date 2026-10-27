@@ -10,38 +10,38 @@ void main() {
 class AgendaApp extends StatelessWidget {
   const AgendaApp({super.key});
 
-  ThemeData _tema(Color cor, Brightness brilho) {
-    final esquema = ColorScheme.fromSeed(seedColor: cor, brightness: brilho).copyWith(
-      primary: brilho == Brightness.light ? cor : null,
-      onPrimary: brilho == Brightness.light ? Colors.white : null,
-    );
+  /// Monta o tema claro ou escuro usando a cor escolhida nas Configurações.
+  ThemeData criarTema(Brightness brilho) {
     return ThemeData(
-      colorScheme: esquema,
+      colorSchemeSeed: agenda.corTema,
+      brightness: brilho,
       appBarTheme: AppBarTheme(
-        backgroundColor: brilho == Brightness.light ? cor : null,
-        foregroundColor: brilho == Brightness.light ? Colors.white : null,
-      ),
-      floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: cor,
+        backgroundColor: agenda.corTema,
         foregroundColor: Colors.white,
-        shape: const CircleBorder(),
       ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final store = AgendaStore.instance;
+    // ListenableBuilder redesenha o app quando a agenda muda (ex.: trocar o tema).
     return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) => MaterialApp(
-        title: 'Agenda de Contatos',
-        debugShowCheckedModeBanner: false,
-        theme: _tema(store.corTema, Brightness.light),
-        darkTheme: _tema(store.corTema, Brightness.dark),
-        themeMode: store.darkMode ? ThemeMode.dark : ThemeMode.light,
-        home: const ListagemScreen(),
-      ),
+      listenable: agenda,
+      builder: (context, child) {
+        ThemeMode modo = ThemeMode.light;
+        if (agenda.darkMode) {
+          modo = ThemeMode.dark;
+        }
+
+        return MaterialApp(
+          title: 'Agenda de Contatos',
+          debugShowCheckedModeBanner: false,
+          theme: criarTema(Brightness.light),
+          darkTheme: criarTema(Brightness.dark),
+          themeMode: modo,
+          home: const ListagemScreen(),
+        );
+      },
     );
   }
 }

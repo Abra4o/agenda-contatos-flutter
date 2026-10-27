@@ -23,4 +23,6 @@ flutter pub get
 flutter run -d chrome
 ```
 
-Os dados ficam em memória enquanto o app está aberto.
+No navegador, os dados (contatos, categorias, grupos, preferências e último backup) são salvos automaticamente no `localStorage`, usando apenas o SDK do Dart (`dart:js_interop`), sem pacotes. Em outras plataformas eles ficam em memória.
+
+Importação/exportação: escolher ou baixar arquivo `.csv` (o Excel abre e salva nesse formato), ou copiar e colar direto de uma planilha. A foto do contato pode ser uma URL ou uma imagem escolhida do computador (até 500 KB).

@@ -1,58 +1,70 @@
 import 'package:flutter/material.dart';
 
+import '../models/contact.dart';
 import '../store/agenda_store.dart';
-import '../widgets/contact_picker_dialog.dart';
 import '../widgets/contact_tile.dart';
+import 'selecionar_contatos_screen.dart';
 
-/// Tela de Favoritos: lista e permite adicionar/remover.
+/// Tela de Favoritos: lista os favoritos e permite adicionar/remover.
 class FavoritosScreen extends StatelessWidget {
   const FavoritosScreen({super.key});
 
-  Future<void> _adicionar(BuildContext context) async {
-    final store = AgendaStore.instance;
-    final candidatos = store.contatos.where((c) => !c.favorito).toList();
-    if (candidatos.isEmpty) {
+  Future<void> adicionar(BuildContext context) async {
+    // Só mostra quem ainda não é favorito.
+    final naoFavoritos = <Contact>[];
+    for (final c in agenda.contatos) {
+      if (!c.favorito) naoFavoritos.add(c);
+    }
+
+    if (naoFavoritos.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Todos os contatos já são favoritos.')),
       );
       return;
     }
-    final escolhidos = await showContactPicker(
-      context,
-      titulo: 'Adicionar aos favoritos',
-      contatos: candidatos,
-    );
-    for (final id in escolhidos ?? const <String>{}) {
-      store.setFavorito(id, true);
+
+    final escolhidos = await selecionarContatos(context, 'Adicionar aos favoritos', naoFavoritos);
+    if (escolhidos == null) return;
+    for (final c in escolhidos) {
+      agenda.setFavorito(c, true);
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final store = AgendaStore.instance;
     return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        final favs = store.favoritos;
+      listenable: agenda,
+      builder: (context, child) {
+        final favoritos = agenda.favoritos;
+
+        Widget conteudo;
+        if (favoritos.isEmpty) {
+          conteudo = const EmptyState(icon: Icons.star_border, texto: 'Nenhum favorito ainda.');
+        } else {
+          conteudo = ListView.builder(
+            padding: const EdgeInsets.only(bottom: 88),
+            itemCount: favoritos.length,
+            itemBuilder: (context, index) {
+              final contato = favoritos[index];
+              return ContactTile(
+                contato: contato,
+                botao: IconButton(
+                  tooltip: 'Remover dos favoritos',
+                  icon: const Icon(Icons.star, color: Colors.amber),
+                  onPressed: () {
+                    agenda.setFavorito(contato, false);
+                  },
+                ),
+              );
+            },
+          );
+        }
+
         return Scaffold(
           appBar: AppBar(title: const Text('Favoritos'), centerTitle: true),
-          body: favs.isEmpty
-              ? const EmptyState(icon: Icons.star_border, texto: 'Nenhum favorito ainda.')
-              : ListView.separated(
-                  padding: const EdgeInsets.only(bottom: 88),
-                  itemCount: favs.length,
-                  separatorBuilder: (_, _) => const Divider(height: 1),
-                  itemBuilder: (_, i) => ContactTile(
-                    contato: favs[i],
-                    trailing: IconButton(
-                      tooltip: 'Remover dos favoritos',
-                      icon: const Icon(Icons.star, color: Colors.amber),
-                      onPressed: () => store.setFavorito(favs[i].id, false),
-                    ),
-                  ),
-                ),
+          body: conteudo,
           floatingActionButton: FloatingActionButton.extended(
-            onPressed: () => _adicionar(context),
+            onPressed: () => adicionar(context),
             icon: const Icon(Icons.star),
             label: const Text('Adicionar'),
           ),

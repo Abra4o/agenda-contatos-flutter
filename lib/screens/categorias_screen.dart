@@ -2,115 +2,90 @@ import 'package:flutter/material.dart';
 
 import '../store/agenda_store.dart';
 import '../widgets/contact_avatar.dart';
-import '../widgets/contact_picker_dialog.dart';
 import '../widgets/contact_tile.dart';
+import '../widgets/dialogos.dart';
+import 'selecionar_contatos_screen.dart';
 
 /// Tela de Categorias: cria categorias e associa contatos (um contato pode ter várias).
 class CategoriasScreen extends StatelessWidget {
   const CategoriasScreen({super.key});
 
-  static const _icones = {
-    'Família': Icons.family_restroom,
-    'Amigos': Icons.people,
-    'Trabalho': Icons.work,
-    'Clientes': Icons.storefront,
-  };
+  /// Ícone de cada categoria padrão. As novas usam um ícone de etiqueta.
+  IconData iconeDaCategoria(String categoria) {
+    if (categoria == 'Família') return Icons.family_restroom;
+    if (categoria == 'Amigos') return Icons.people;
+    if (categoria == 'Trabalho') return Icons.work;
+    if (categoria == 'Clientes') return Icons.storefront;
+    return Icons.label;
+  }
 
-  Future<void> _criar(BuildContext context) async {
-    final nome = await showTextDialog(context, titulo: 'Nova categoria', confirmar: 'Criar');
+  Future<void> criar(BuildContext context) async {
+    final nome = await pedirTexto(context, 'Nova categoria');
     if (nome == null || !context.mounted) return;
-    if (!AgendaStore.instance.criarCategoria(nome)) {
+
+    final criou = agenda.criarCategoria(nome);
+    if (!criou) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('A categoria "$nome" já existe.')),
       );
     }
   }
 
-  Future<void> _associar(BuildContext context, String cat) async {
-    final store = AgendaStore.instance;
-    final atuais = store.contatosDaCategoria(cat).map((c) => c.id).toSet();
-    final escolhidos = await showContactPicker(
+  /// Abre a lista de contatos para marcar quem faz parte da categoria.
+  Future<void> associar(BuildContext context, String categoria) async {
+    final escolhidos = await selecionarContatos(
       context,
-      titulo: 'Contatos em "$cat"',
-      contatos: store.contatos,
-      selecionados: atuais,
-      confirmar: 'Salvar',
+      'Contatos em "$categoria"',
+      agenda.contatos,
+      jaMarcados: agenda.contatosDaCategoria(categoria),
     );
     if (escolhidos == null) return;
-    for (final c in store.contatos) {
-      final dentro = escolhidos.contains(c.id);
-      if (dentro != atuais.contains(c.id)) store.setCategoria(c.id, cat, dentro);
+
+    for (final c in agenda.contatos) {
+      if (escolhidos.contains(c)) {
+        agenda.colocarNaCategoria(c, categoria);
+      } else {
+        agenda.tirarDaCategoria(c, categoria);
+      }
     }
   }
 
-  Future<void> _excluir(BuildContext context, String cat) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Excluir categoria'),
-        content: Text('Excluir "$cat"? Os contatos não serão apagados.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Excluir')),
-        ],
-      ),
+  Future<void> excluir(BuildContext context, String categoria) async {
+    final ok = await confirmar(
+      context,
+      'Excluir categoria',
+      'Excluir "$categoria"? Os contatos não serão apagados.',
+      'Excluir',
     );
-    if (ok == true) AgendaStore.instance.excluirCategoria(cat);
+    if (ok) agenda.excluirCategoria(categoria);
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final store = AgendaStore.instance;
-    return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        return Scaffold(
-          appBar: AppBar(title: const Text('Categorias'), centerTitle: true),
-          body: store.categorias.isEmpty
-              ? const EmptyState(icon: Icons.label_outline, texto: 'Nenhuma categoria.')
-              : ListView(
-                  padding: const EdgeInsets.only(bottom: 88),
-                  children: [
-                    for (final cat in store.categorias)
-                      _CategoriaCard(
-                        categoria: cat,
-                        icone: _icones[cat] ?? Icons.label,
-                        onAssociar: () => _associar(context, cat),
-                        onExcluir: () => _excluir(context, cat),
-                      ),
-                  ],
-                ),
-          floatingActionButton: FloatingActionButton.extended(
-            onPressed: () => _criar(context),
-            icon: const Icon(Icons.add),
-            label: const Text('Nova categoria'),
-          ),
-        );
-      },
-    );
-  }
-}
+  /// Card de uma categoria, que abre para mostrar os contatos dela.
+  Widget cardDaCategoria(BuildContext context, String categoria) {
+    final contatos = agenda.contatosDaCategoria(categoria);
 
-class _CategoriaCard extends StatelessWidget {
-  final String categoria;
-  final IconData icone;
-  final VoidCallback onAssociar;
-  final VoidCallback onExcluir;
+    final linhas = <Widget>[];
+    if (contatos.isEmpty) {
+      linhas.add(const ListTile(title: Text('Nenhum contato nesta categoria.')));
+    }
+    for (final c in contatos) {
+      linhas.add(ListTile(
+        leading: ContactAvatar(contact: c, radius: 16),
+        title: Text(c.nome),
+        trailing: IconButton(
+          tooltip: 'Remover da categoria',
+          icon: const Icon(Icons.remove_circle_outline),
+          onPressed: () {
+            agenda.tirarDaCategoria(c, categoria);
+          },
+        ),
+      ));
+    }
 
-  const _CategoriaCard({
-    required this.categoria,
-    required this.icone,
-    required this.onAssociar,
-    required this.onExcluir,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final contatos = AgendaStore.instance.contatosDaCategoria(categoria);
     return Card(
       margin: const EdgeInsets.fromLTRB(12, 8, 12, 0),
       child: ExpansionTile(
-        leading: Icon(icone),
+        leading: Icon(iconeDaCategoria(categoria)),
         title: Text(categoria),
         subtitle: Text('${contatos.length} contato(s)'),
         trailing: Row(
@@ -119,30 +94,48 @@ class _CategoriaCard extends StatelessWidget {
             IconButton(
               tooltip: 'Associar contatos',
               icon: const Icon(Icons.person_add),
-              onPressed: onAssociar,
+              onPressed: () => associar(context, categoria),
             ),
             IconButton(
               tooltip: 'Excluir categoria',
               icon: const Icon(Icons.delete_outline),
-              onPressed: onExcluir,
+              onPressed: () => excluir(context, categoria),
             ),
           ],
         ),
-        children: [
-          if (contatos.isEmpty)
-            const ListTile(title: Text('Nenhum contato nesta categoria.')),
-          for (final c in contatos)
-            ListTile(
-              leading: ContactAvatar(contact: c, radius: 16),
-              title: Text(c.nome),
-              trailing: IconButton(
-                tooltip: 'Remover da categoria',
-                icon: const Icon(Icons.remove_circle_outline),
-                onPressed: () => AgendaStore.instance.setCategoria(c.id, categoria, false),
-              ),
-            ),
-        ],
+        children: linhas,
       ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: agenda,
+      builder: (context, child) {
+        Widget conteudo;
+        if (agenda.categorias.isEmpty) {
+          conteudo = const EmptyState(icon: Icons.label_outline, texto: 'Nenhuma categoria.');
+        } else {
+          conteudo = ListView.builder(
+            padding: const EdgeInsets.only(bottom: 88),
+            itemCount: agenda.categorias.length,
+            itemBuilder: (context, index) {
+              return cardDaCategoria(context, agenda.categorias[index]);
+            },
+          );
+        }
+
+        return Scaffold(
+          appBar: AppBar(title: const Text('Categorias'), centerTitle: true),
+          body: conteudo,
+          floatingActionButton: FloatingActionButton.extended(
+            onPressed: () => criar(context),
+            icon: const Icon(Icons.add),
+            label: const Text('Nova categoria'),
+          ),
+        );
+      },
     );
   }
 }

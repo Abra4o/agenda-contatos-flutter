@@ -3,71 +3,66 @@ import 'package:flutter/material.dart';
 import '../models/contact.dart';
 import '../store/agenda_store.dart';
 import '../widgets/contact_avatar.dart';
+import '../widgets/dialogos.dart';
 import 'edicao_screen.dart';
 
-/// Tela de Detalhes: informações completas, editar e excluir.
+/// Tela de Detalhes: mostra tudo do contato e tem os botões de editar e excluir.
 class DetalhesScreen extends StatelessWidget {
-  final String contatoId;
+  final Contact contato;
 
-  const DetalhesScreen({super.key, required this.contatoId});
+  const DetalhesScreen({super.key, required this.contato});
 
-  void _editar(BuildContext context, Contact c) {
+  void editar(BuildContext context) {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => EdicaoScreen(contato: c)),
+      MaterialPageRoute(builder: (context) => EdicaoScreen(contato: contato)),
     );
   }
 
-  Future<void> _excluir(BuildContext context, Contact c) async {
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Excluir contato'),
-        content: Text('Deseja excluir "${c.nome}"? Essa ação não pode ser desfeita.'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: Colors.red),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Excluir'),
-          ),
-        ],
-      ),
+  Future<void> excluir(BuildContext context) async {
+    final ok = await confirmar(
+      context,
+      'Excluir contato',
+      'Deseja excluir "${contato.nome}"? Essa ação não pode ser desfeita.',
+      'Excluir',
     );
-    if (ok == true && context.mounted) {
-      final messenger = ScaffoldMessenger.of(context);
-      Navigator.pop(context);
-      AgendaStore.instance.excluir(c.id);
-      messenger.showSnackBar(SnackBar(content: Text('${c.nome} excluído')));
-    }
+    if (!ok || !context.mounted) return;
+
+    agenda.excluir(contato);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('${contato.nome} excluído')),
+    );
+    Navigator.pop(context);
+  }
+
+  /// Uma linha de informação. Se o valor estiver vazio, não mostra nada.
+  Widget linhaInfo(IconData icone, String rotulo, String valor) {
+    if (valor.isEmpty) return const SizedBox();
+    return ListTile(
+      leading: Icon(icone),
+      title: SelectableText(valor),
+      subtitle: Text(rotulo),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final store = AgendaStore.instance;
     return ListenableBuilder(
-      listenable: store,
-      builder: (context, _) {
-        final c = store.byId(contatoId);
-        if (c == null) {
-          return Scaffold(
-            appBar: AppBar(),
-            body: const Center(child: Text('Contato não encontrado')),
-          );
+      listenable: agenda,
+      builder: (context, child) {
+        // Nomes dos grupos de que o contato participa.
+        final nomesGrupos = <String>[];
+        for (final g in agenda.grupos) {
+          if (g.membros.contains(contato.id)) nomesGrupos.add(g.nome);
         }
-        final grupos = store.grupos
-            .where((g) => g.memberIds.contains(c.id))
-            .map((g) => g.nome)
-            .join(', ');
 
-        Widget info(IconData icon, String label, String valor) {
-          if (valor.isEmpty) return const SizedBox.shrink();
-          return ListTile(
-            leading: Icon(icon),
-            title: SelectableText(valor),
-            subtitle: Text(label),
-          );
+        String aniversario = '';
+        if (contato.aniversario != null) {
+          aniversario = formatarData(contato.aniversario!);
         }
+
+        String observacoes = contato.observacoes;
+        if (observacoes.isEmpty) observacoes = 'Sem observações';
 
         return Scaffold(
           appBar: AppBar(
@@ -75,56 +70,39 @@ class DetalhesScreen extends StatelessWidget {
             centerTitle: true,
             actions: [
               IconButton(
-                tooltip: c.favorito ? 'Remover dos favoritos' : 'Favoritar',
-                icon: Icon(c.favorito ? Icons.star : Icons.star_border),
-                onPressed: () => store.setFavorito(c.id, !c.favorito),
-              ),
-              IconButton(
-                tooltip: 'Editar',
-                icon: const Icon(Icons.edit),
-                onPressed: () => _editar(context, c),
-              ),
-              IconButton(
-                tooltip: 'Excluir',
-                icon: const Icon(Icons.delete),
-                onPressed: () => _excluir(context, c),
+                tooltip: contato.favorito ? 'Remover dos favoritos' : 'Favoritar',
+                icon: Icon(contato.favorito ? Icons.star : Icons.star_border),
+                onPressed: () {
+                  agenda.setFavorito(contato, !contato.favorito);
+                },
               ),
             ],
           ),
           body: ListView(
             padding: const EdgeInsets.symmetric(vertical: 24),
             children: [
-              Center(
-                child: Hero(
-                  tag: 'avatar-${c.id}',
-                  child: ContactAvatar(contact: c, radius: 60),
-                ),
-              ),
+              Center(child: ContactAvatar(contact: contato, radius: 60)),
               const SizedBox(height: 12),
               Center(
-                child: Text(c.nome, style: Theme.of(context).textTheme.headlineSmall),
+                child: Text(contato.nome, style: const TextStyle(fontSize: 24)),
               ),
-              if (c.categorias.isNotEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Wrap(
-                    alignment: WrapAlignment.center,
-                    spacing: 6,
-                    children: [for (final cat in c.categorias) Chip(label: Text(cat))],
-                  ),
-                ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 8),
+              Wrap(
+                alignment: WrapAlignment.center,
+                spacing: 6,
+                children: [
+                  for (final cat in contato.categorias) Chip(label: Text(cat)),
+                ],
+              ),
               const Divider(),
-              info(Icons.phone, 'Telefone', c.telefone),
-              info(Icons.email, 'E-mail', c.email),
-              info(Icons.location_city, 'Cidade', c.cidade),
-              info(Icons.business, 'Empresa', c.empresa),
-              info(Icons.cake, 'Aniversário',
-                  c.aniversario == null ? '' : formatDate(c.aniversario!)),
-              info(Icons.group, 'Grupos', grupos),
-              info(Icons.notes, 'Observações',
-                  c.observacoes.isEmpty ? 'Sem observações' : c.observacoes),
-              info(Icons.event, 'Cadastrado em', formatDate(c.dataCadastro)),
+              linhaInfo(Icons.phone, 'Telefone', contato.telefone),
+              linhaInfo(Icons.email, 'E-mail', contato.email),
+              linhaInfo(Icons.location_city, 'Cidade', contato.cidade),
+              linhaInfo(Icons.business, 'Empresa', contato.empresa),
+              linhaInfo(Icons.cake, 'Aniversário', aniversario),
+              linhaInfo(Icons.group, 'Grupos', nomesGrupos.join(', ')),
+              linhaInfo(Icons.notes, 'Observações', observacoes),
+              linhaInfo(Icons.event, 'Cadastrado em', formatarData(contato.dataCadastro)),
               const SizedBox(height: 16),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -132,7 +110,7 @@ class DetalhesScreen extends StatelessWidget {
                   children: [
                     Expanded(
                       child: OutlinedButton.icon(
-                        onPressed: () => _excluir(context, c),
+                        onPressed: () => excluir(context),
                         icon: const Icon(Icons.delete, color: Colors.red),
                         label: const Text('Excluir'),
                       ),
@@ -140,7 +118,7 @@ class DetalhesScreen extends StatelessWidget {
                     const SizedBox(width: 12),
                     Expanded(
                       child: FilledButton.icon(
-                        onPressed: () => _editar(context, c),
+                        onPressed: () => editar(context),
                         icon: const Icon(Icons.edit),
                         label: const Text('Editar'),
                       ),
